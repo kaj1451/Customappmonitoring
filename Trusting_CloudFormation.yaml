@@ -1,0 +1,826 @@
+AWSTemplateFormatVersion: '2010-09-09'
+
+Parameters:
+
+  InstanceId:
+    Type: String
+    Description: The ID of the Connect instance to monitor
+    Default: e55a89e5-1e8f-4696-8955-1688d28c7e36
+
+  TopicName:
+    Type: String
+    Description: Name of the SNS topic
+    Default: Topic
+
+  SourceEmail:
+    Type: String
+    Description: The source email address for sending SES notifications
+    Default: yeshwant.rajaraman@cdw.com
+
+  SubscriberEmails:
+    Type: CommaDelimitedList
+    Description: List of email addresses to subscribe to the SNS topic
+    Default: rajalakshmi.ramesh@cdw.com
+  
+Resources:
+  MyLambdaExecutionRole:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      RoleName: 'iamroleyamlcloudwatchtest'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: 'Allow'
+            Principal:
+              Service: 'lambda.amazonaws.com'
+            Action: 'sts:AssumeRole'
+      Policies:
+        - PolicyName: 'FullAccessCloudWatch'
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: 'Allow'
+                Action:
+                  - 'logs:*'
+                  - 'cloudwatch:*'
+                Resource: '*'
+
+  MyLambdaFunction:
+    Type: 'AWS::Lambda::Function'
+    Properties: 
+      FunctionName: 'yamlcloudwatchtest'
+      Runtime: 'python3.11'
+      Role: !GetAtt MyLambdaExecutionRole.Arn
+      Handler: 'index.lambda_handler'
+      Code:
+        ZipFile: |
+          import json
+          import boto3
+          import os
+          from datetime import datetime, timedelta, timezone
+
+          def lambda_handler(event, context):
+              client = boto3.client('cloudwatch')
+              
+              awsARN = os.environ["AWSConnectARN"]
+              contactFlowARN = os.environ["SalesforceRestAPIFlowARN"]
+              
+              if "timeframeLength" in event:
+                  timeframeLength = event['timeframeLength']
+              else:
+                  timeframeLength = "";
+              if "timeframeUnit" in event:
+                  timeframeUnit = event['timeframeUnit']
+              else:
+                  timeframeUnit = "";
+              
+
+              # Define the time range
+              end_time = datetime.now()
+              if timeframeLength and timeframeUnit:
+                  dateArgs = {timeframeUnit: int(timeframeLength)}
+                  start_time = end_time - timedelta(**dateArgs)
+              else:
+                  start_time = end_time - timedelta(weeks=2)
+              
+              
+
+              # Define the parameters for the get_metric_data call
+              params = {
+                  'StartTime': start_time,
+                  'EndTime': end_time,
+                  'MetricDataQueries': [
+                      {
+                          'Id': 'calls_per_interval',  # Unique identifier for this metric query
+                          'MetricStat': {
+                              'Metric': {
+                                  'Namespace': 'AWS/Connect',
+                                  'MetricName': 'CallsPerInterval',
+                                  'Dimensions': [
+                                      {
+                                          'Name': 'InstanceId',
+                                          'Value': awsARN  # AWS Connect Instance ID
+                                      },
+                                      {
+                                          "Name": "MetricGroup",
+                                          "Value": "VoiceCalls"
+                                      },
+                                      
+                                  ]
+                              },
+                              'Period': 60,  # Period in seconds (5 minutes)
+                              'Stat': 'Sum',  # Statistic to retrieve
+                              'Unit': 'Count'  # Unit of the metric
+                          },
+                          'ReturnData': True
+                      },
+                      {
+                          'Id': 'missed_calls',  # Unique identifier for this metric query
+                          'MetricStat': {
+                              'Metric': {
+                                  'Namespace': 'AWS/Connect',
+                                  'MetricName': 'MissedCalls',
+                                  'Dimensions': [
+                                      {
+                                          'Name': 'InstanceId',
+                                          'Value': awsARN  # AWS Connect Instance ID
+                                      },
+                                      {
+                                          "Name": "MetricGroup",
+                                          "Value": "VoiceCalls"
+                                      },
+                                      
+                                  ]
+                              },
+                              'Period': 60,  # Period in seconds (5 minutes)
+                              'Stat': 'Sum',  # Statistic to retrieve
+                              'Unit': 'Count'  # Unit of the metric
+                          },
+                          'ReturnData': True
+                      },
+                      {
+                          'Id': 'calls_breaching_concurrency_quota',  # Unique identifier for this metric query
+                          'MetricStat': {
+                              'Metric': {
+                                  'Namespace': 'AWS/Connect',
+                                  'MetricName': 'CallsBreachingConcurrencyQuota',
+                                  'Dimensions': [
+                                      {
+                                          'Name': 'InstanceId',
+                                          'Value': awsARN  # AWS Connect Instance ID
+                                      },
+                                      {
+                                          "Name": "MetricGroup",
+                                          "Value": "VoiceCalls"
+                                      },
+                                      
+                                  ]
+                              },
+                              'Period': 60,  # Period in seconds (5 minutes)
+                              'Stat': 'Sum',  # Statistic to retrieve
+                              'Unit': 'Count'  # Unit of the metric
+                          },
+                          'ReturnData': True
+                      },
+                      {
+                          'Id': 'call_recording_upload_error',  # Unique identifier for this metric query
+                          'MetricStat': {
+                              'Metric': {
+                                  'Namespace': 'AWS/Connect',
+                                  'MetricName': 'CallRecordingUploadError',
+                                  'Dimensions': [
+                                      {
+                                          'Name': 'InstanceId',
+                                          'Value': awsARN  # AWS Connect Instance ID
+                                      },
+                                      {
+                                          "Name": "MetricGroup",
+                                          "Value": "CallRecordings"
+                                      },
+                                      
+                                  ]
+                              },
+                              'Period': 60,  # Period in seconds (5 minutes)
+                              'Stat': 'Sum',  # Statistic to retrieve
+                              'Unit': 'Count'  # Unit of the metric
+                          },
+                          'ReturnData': True
+                      },
+                      {
+                          'Id': 'chats_breaching_active_chat_quota',  # Unique identifier for this metric query
+                          'MetricStat': {
+                              'Metric': {
+                                  'Namespace': 'AWS/Connect',
+                                  'MetricName': 'ChatsBreachingActiveChatQuota',
+                                  'Dimensions': [
+                                      {
+                                          'Name': 'InstanceId',
+                                          'Value': awsARN  # AWS Connect Instance ID
+                                      },
+                                      {
+                                          "Name": "MetricGroup",
+                                          "Value": "Chats"
+                                      },
+                                      
+                                  ]
+                              },
+                              'Period': 300,  # Period in seconds (5 minutes)
+                              'Stat': 'Sum',  # Statistic to retrieve
+                              'Unit': 'Count'  # Unit of the metric
+                          },
+                          'ReturnData': True
+                      },
+                      {
+                          'Id': 'concurrent_active_chats',  # Unique identifier for this metric query
+                          'MetricStat': {
+                              'Metric': {
+                                  'Namespace': 'AWS/Connect',
+                                  'MetricName': 'ConcurrentActiveChats',
+                                  'Dimensions': [
+                                      {
+                                          'Name': 'InstanceId',
+                                          'Value': awsARN  # AWS Connect Instance ID
+                                      },
+                                      {
+                                          "Name": "MetricGroup",
+                                          "Value": "Chats"
+                                      },
+                                      
+                                  ]
+                              },
+                              'Period': 300,  # Period in seconds (5 minutes)
+                              'Stat': 'Sum',  # Statistic to retrieve
+                              'Unit': 'Count'  # Unit of the metric
+                          },
+                          'ReturnData': True
+                      },
+                      {
+                          'Id': 'contact_flow_errors',  # Unique identifier for this metric query
+                          'MetricStat': {
+                              'Metric': {
+                                  'Namespace': 'AWS/Connect',
+                                  'MetricName': 'ContactFlowErrors',
+                                  'Dimensions': [
+                                      {
+                                          'Name': 'InstanceId',
+                                          'Value': awsARN  # AWS Connect Instance ID for devinstance
+                                      },
+                                      {
+                                          "Name": "MetricGroup",
+                                          "Value": "ContactFlow"
+                                      },
+                                      {
+                                        "Name": "ContactFlowName",
+                                        "Value": contactFlowARN
+                                      }
+                                      
+                                  ]
+                              },
+                              'Period': 300,  # Period in seconds (5 minutes)
+                              'Stat': 'Sum',  # Statistic to retrieve
+                              'Unit': 'Count'  # Unit of the metric
+                          },
+                          'ReturnData': True
+                      },
+                      {
+                          'Id': 'contact_flow_fatal_errors',  # Unique identifier for this metric query
+                          'MetricStat': {
+                              'Metric': {
+                                  'Namespace': 'AWS/Connect',
+                                  'MetricName': 'ContactFlowFatalErrors',
+                                  'Dimensions': [
+                                      {
+                                          'Name': 'InstanceId',
+                                          'Value': awsARN  # AWS Connect Instance ID for devinstance
+                                      },
+                                      {
+                                          "Name": "MetricGroup",
+                                          "Value": "ContactFlow"
+                                      },
+                                      {
+                                        "Name": "ContactFlowName",
+                                        "Value": contactFlowARN
+                                      }
+                                      
+                                  ]
+                              },
+                              'Period': 300,  # Period in seconds (5 minutes)
+                              'Stat': 'Sum',  # Statistic to retrieve
+                              'Unit': 'Count'  # Unit of the metric
+                          },
+                          'ReturnData': True
+                      },
+                      {
+                          'Id': 'throttled_calls',  # Unique identifier for this metric query
+                          'MetricStat': {
+                              'Metric': {
+                                  'Namespace': 'AWS/Connect',
+                                  'MetricName': 'ThrottledCalls',
+                                  'Dimensions': [
+                                      {
+                                          'Name': 'InstanceId',
+                                          'Value': awsARN  # AWS Connect Instance ID
+                                      },
+                                      {
+                                          "Name": "MetricGroup",
+                                          "Value": "VoiceCalls"
+                                      },
+                                      
+                                  ]
+                              },
+                              'Period': 300,  # Period in seconds (5 minutes)
+                              'Stat': 'Sum',  # Statistic to retrieve
+                              'Unit': 'Count'  # Unit of the metric
+                          },
+                          'ReturnData': True
+                      },
+                      {
+                          'Id': 'to_instance_packet_loss_rate',  # Unique identifier for this metric query
+                          'MetricStat': {
+                              'Metric': {
+                                  'Namespace': 'AWS/Connect',
+                                  'MetricName': 'ToInstancePacketLossRate',
+                                  'Dimensions': [
+                                      {
+                                          'Name': 'InstanceId',
+                                          'Value': awsARN  # AWS Connect Instance ID
+                                      },
+                                      {
+                                          "Name": "Participant",
+                                          "Value": "Agent"
+                                      },
+                                      {
+                                          "Name": "Type of Connection",
+                                          "Value": "WebRTC"
+                                      },
+                                      {
+                                          "Name": "Stream Type",
+                                          "Value": "Voice"
+                                      },
+                                  ]
+                              },
+                              'Period': 60,  # Period in seconds (5 minutes)
+                              'Stat': 'Sum',  # Statistic to retrieve
+                              'Unit': 'Count'  # Unit of the metric
+                          },
+                          'ReturnData': True
+                      }
+                  ]
+              }
+              
+              # List metrics in use on Cloudwatch for Amazon Connect
+              # metricsListResponse = client.list_metrics(Namespace="AWS/Connect")
+              # return metricsListResponse
+
+              metricDataResponse = client.get_metric_data(**params)
+
+              allDataResponse = []
+              allDataResponse.append(metricDataResponse)
+
+              while "NextToken" in metricDataResponse:
+                  params["NextToken"] = metricDataResponse["NextToken"]
+                  newMetricDataResponse = client.get_metric_data(**params)
+                  allDataResponse.append(newMetricDataResponse)
+                  metricDataResponse = newMetricDataResponse
+
+            
+              for element in allDataResponse:
+                  for metric in element['MetricDataResults']:
+                      metric['Timestamps'] = [datapoint.strftime("%m/%d %-I:%M %p") for datapoint in metric['Timestamps']]
+                    
+              mergedData = {}
+                    
+              for element in allDataResponse:
+                  if element["ResponseMetadata"]["HTTPStatusCode"] == 200:
+                      for result in element["MetricDataResults"]:
+                          metric_id = result["Id"]
+                          if metric_id not in mergedData:
+                              mergedData[metric_id] = {
+                                  "Id": metric_id,
+                                  "Label": result["Label"],
+                                  "Timestamps": [],
+                                  "Values": [],
+                              }
+                          mergedData[metric_id]["Timestamps"].extend(result["Timestamps"])
+                          mergedData[metric_id]["Values"].extend(result["Values"])
+                        
+              allMergedData = list(mergedData.values())
+            
+              return {
+                  "MetricDataResults": allMergedData
+              }
+      Environment:
+        Variables:
+          # AWSConnectARN: '15e62379-5da6-4894-a63d-0aa38892ad7c'
+          # SalesforceRestAPIFlowARN: 'bfc98717-4f7b-4ed1-8f40-cb4092b193bd'
+          AWSConnectARN: !Ref InstanceId
+          SalesforceRestAPIFlowARN: !Ref InstanceId
+      MemorySize: 128
+      Timeout: 60
+
+  MyApiGateway:
+    Type: 'AWS::ApiGateway::RestApi'
+    Properties:
+      Name: 'yamlcloudwatchmetrics'
+      Description: 'API Gateway for CloudWatch Metrics'
+
+  MyApiResource:
+    Type: 'AWS::ApiGateway::Resource'
+    Properties:
+      ParentId: !GetAtt MyApiGateway.RootResourceId
+      PathPart: 'yamlcloudwatchtest'
+      RestApiId: !Ref MyApiGateway
+
+  MyApiMethod:
+    Type: 'AWS::ApiGateway::Method'
+    Properties:
+      AuthorizationType: 'NONE'
+      HttpMethod: 'GET'
+      ResourceId: !Ref MyApiResource
+      RestApiId: !Ref MyApiGateway
+      RequestParameters:
+        method.request.querystring.timeframeLength: false
+        method.request.querystring.timeframeUnit: false
+      Integration:
+        IntegrationHttpMethod: 'POST'
+        Type: 'AWS'
+        Uri: 
+          Fn::Sub: 
+            - arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${LambdaArn}/invocations
+            - LambdaArn: !GetAtt MyLambdaFunction.Arn
+        RequestParameters:
+          integration.request.querystring.timeframeLength: 'method.request.querystring.timeframeLength'
+          integration.request.querystring.timeframeUnit: 'method.request.querystring.timeframeUnit'
+        RequestTemplates:
+          application/json: |
+            {
+              "timeframeLength": "$input.params('timeframeLength')",
+              "timeframeUnit": "$input.params('timeframeUnit')"
+            }
+        IntegrationResponses:
+          - StatusCode: 200
+            ResponseParameters:
+              'method.response.header.Access-Control-Allow-Origin': "'*'"
+      MethodResponses:
+        - StatusCode: 200
+          ResponseParameters:
+            'method.response.header.Access-Control-Allow-Origin': true
+
+
+  MyApiOptionsMethod:
+    Type: 'AWS::ApiGateway::Method'
+    Properties:
+      AuthorizationType: 'NONE'
+      HttpMethod: 'OPTIONS'
+      ResourceId: !Ref MyApiResource
+      RestApiId: !Ref MyApiGateway
+      Integration:
+        IntegrationHttpMethod: 'OPTIONS'
+        Type: 'MOCK'
+        RequestTemplates:
+          application/json: '{}'
+        IntegrationResponses:
+          - StatusCode: 200
+            ResponseParameters:
+              'method.response.header.Access-Control-Allow-Origin': "'*'"
+              'method.response.header.Access-Control-Allow-Headers': "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+              'method.response.header.Access-Control-Allow-Methods': "'OPTIONS,GET'"
+            ResponseTemplates:
+              application/json: '{}'
+      MethodResponses:
+        - StatusCode: 200
+          ResponseParameters:
+            'method.response.header.Access-Control-Allow-Origin': true
+            'method.response.header.Access-Control-Allow-Headers': true
+            'method.response.header.Access-Control-Allow-Methods': true
+
+
+  MyApiDeployment:
+    Type: 'AWS::ApiGateway::Deployment'
+    Properties:
+      RestApiId: !Ref MyApiGateway
+      StageName: 'testing'
+    DependsOn:
+      - MyApiMethod
+      - MyApiOptionsMethod
+
+  LambdaApiGatewayInvokePermission:
+    Type: 'AWS::Lambda::Permission'
+    Properties:
+      Action: 'lambda:InvokeFunction'
+      FunctionName: !Ref MyLambdaFunction
+      Principal: 'apigateway.amazonaws.com'
+      SourceArn: 
+        Fn::Sub: 
+          - arn:aws:execute-api:${AWSRegion}:${AWSAccountId}:${MyApiId}/*/${MyApiMethod}/${MyApiResourcePath}
+          - AWSRegion: !Ref "AWS::Region"
+            AWSAccountId: !Ref "AWS::AccountId"
+            MyApiId: !Ref MyApiGateway
+            MyApiMethod: "GET"
+            MyApiResourcePath: "yamlcloudwatchtest"
+
+  MySNSTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName: !Ref TopicName
+
+  MySNSSubscriptions:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: !Sub "https://thisisbucketda.s3.amazonaws.com/my-sns-subscriptions-template.yaml"
+      Parameters:
+        TopicArn: !Ref MySNSTopic
+        SubscriberEmails: !Join [ ",", !Ref SubscriberEmails ]
+
+  SESLambdaFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      Handler: index.lambda_handler
+      Role: !GetAtt SESLambdaExecutionRole.Arn
+      Runtime: python3.11
+      Timeout: 300
+      Environment:
+        Variables:
+          SUBSCRIBER_EMAILS: !Join [ ",", !Ref SubscriberEmails ]
+          SOURCE_EMAIL: !Ref SourceEmail
+      Code:
+        ZipFile: |
+          import json
+          import boto3
+          import os
+
+          # Initialize the SES client
+          ses = boto3.client('ses')
+
+          def lambda_handler(event, context):
+              try:
+                  # Check if 'Records' exists in the event and is not empty
+                  if 'Records' not in event or not event['Records']:
+                      raise ValueError("Event does not contain Records.")
+                  
+                  # Extract the SNS message from the event
+                  record = event['Records'][0]
+                  message = json.loads(record['Sns']['Message'])
+                  
+                  # Extract relevant details from the message
+                  alarm_name = message.get('AlarmName', 'Unknown')
+                  instance_id = message.get('Trigger', {}).get('Dimensions', [{}])[0].get('value', 'Unknown')
+                  metric_name = message.get('Trigger', {}).get('MetricName', 'Unknown')
+                  threshold = message.get('Trigger', {}).get('Threshold', 'Unknown')
+                  
+                  # Define the email subject and body
+                  subject = f"Alert: {alarm_name}"
+                  body = (
+                      f"I hope this email finds you well. We wanted to inform you that an alarm has been triggered in our monitoring system, "
+                      f"indicating that one of the critical metrics for your Amazon Connect instance has breached the predefined threshold.\n\n"
+                      f"Alarm Details:\n"
+                      f"Alarm Name: {alarm_name}\n"
+                      f"Instance ID: {instance_id}\n"
+                      f"Metric Name: {metric_name}\n"
+                      f"Threshold: {threshold}\n\n"
+                      f"This alarm was triggered due to the {metric_name} exceeding the set threshold of {threshold}. "
+                      f"We are closely monitoring the situation and taking the necessary steps to ensure that this issue is addressed promptly.\n\n"
+                      f"If you have any questions or require further assistance, please do not hesitate to contact us. "
+                      f"We are committed to maintaining the highest level of service and will keep you informed of any further developments.\n\n"
+                      f"Thank you for your attention to this matter.\n\n"
+                      f"Details:\n{json.dumps(message, indent=2)}\n\n"
+                  )
+
+                  # Get the list of subscriber emails and source email from environment variables
+                  emails = os.environ['SUBSCRIBER_EMAILS'].split(',')
+                  source_email = os.environ['SOURCE_EMAIL']
+
+                  # Send the email to each address
+                  email_responses = []
+                  for email in emails:
+                      response = ses.send_email(
+                          Destination={'ToAddresses': [email]},
+                          Message={
+                              'Body': {'Text': {'Data': body}},
+                              'Subject': {'Data': subject}
+                          },
+                          Source=source_email
+                      )
+                      email_responses.append(response)
+                  
+                  # Return a success response with the email responses
+                  return {"status": "success", "responses": email_responses}
+
+              except Exception as error:
+                  # Log and raise the error for debugging
+                  print(f"Error: {error}")
+                  raise error
+
+  SESLambdaExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: SESLambdaPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - ses:SendEmail
+                  - ses:SendRawEmail
+                Resource: '*'
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource: 'arn:aws:logs:*:*:*'
+
+  SESLambdaSubscription:
+    Type: AWS::SNS::Subscription
+    Properties:
+      TopicArn: !Ref MySNSTopic
+      Protocol: lambda
+      Endpoint: !GetAtt SESLambdaFunction.Arn
+
+  LambdaInvokePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref SESLambdaFunction
+      Action: 'lambda:InvokeFunction'
+      Principal: 'sns.amazonaws.com'
+      SourceArn: !Ref MySNSTopic
+
+  CallsPerInterval:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub "${InstanceId}-CallsPerInterval-Alarm"
+      Namespace: AWS/Connect
+      MetricName: CallsPerInterval
+      Dimensions:
+        - Name: InstanceId
+          Value: !Ref InstanceId
+        - Name: MetricGroup
+          Value: VoiceCalls
+      Statistic: Sum
+      Period: 60
+      EvaluationPeriods: 1
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      AlarmActions:
+        - !Ref MySNSTopic
+
+  MissedCallsAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub "${InstanceId}-MissedCalls-Alarm"
+      Namespace: AWS/Connect
+      MetricName: MissedCalls
+      Dimensions:
+        - Name: InstanceId
+          Value: !Ref InstanceId
+        - Name: MetricGroup
+          Value: VoiceCalls
+      Statistic: Sum
+      Period: 60
+      EvaluationPeriods: 1
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      AlarmActions:
+        - !Ref MySNSTopic
+
+  CallsBreachingConcurrencyQuota:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub "${InstanceId}-CallsBreachingConcurrencyQuota-Alarm"
+      Namespace: AWS/Connect
+      MetricName: CallsBreachingConcurrencyQuota
+      Dimensions:
+        - Name: InstanceId
+          Value: !Ref InstanceId
+        - Name: MetricGroup
+          Value: VoiceCalls
+      Statistic: Sum
+      Period: 60
+      EvaluationPeriods: 1
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      AlarmActions:
+        - !Ref MySNSTopic
+
+  CallRecordingUploadError:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub "${InstanceId}-CallRecordingUploadError-Alarm"
+      Namespace: AWS/Connect
+      MetricName: CallRecordingUploadError
+      Dimensions:
+        - Name: InstanceId
+          Value: !Ref InstanceId
+        - Name: MetricGroup
+          Value: VoiceCalls
+      Statistic: Sum
+      Period: 60
+      EvaluationPeriods: 1
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      AlarmActions:
+        - !Ref MySNSTopic
+
+
+  ChatsBreachingActiveChatQuota:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub "${InstanceId}-ChatsBreachingActiveChatQuota-Alarm"
+      Namespace: AWS/Connect
+      MetricName: ChatsBreachingActiveChatQuota
+      Dimensions:
+        - Name: InstanceId
+          Value: !Ref InstanceId
+        - Name: MetricGroup
+          Value: VoiceCalls
+      Statistic: Sum
+      Period: 60
+      EvaluationPeriods: 1
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      AlarmActions:
+        - !Ref MySNSTopic
+
+     
+  ConcurrentActiveChats:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub "${InstanceId}-ConcurrentActiveChats-Alarm"
+      Namespace: AWS/Connect
+      MetricName: ConcurrentActiveChats
+      Dimensions:
+        - Name: InstanceId
+          Value: !Ref InstanceId
+        - Name: MetricGroup
+          Value: VoiceCalls
+      Statistic: Sum
+      Period: 60
+      EvaluationPeriods: 1
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      AlarmActions:
+        - !Ref MySNSTopic
+
+  ContactFlowErrors:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub "${InstanceId}-ContactFlowErrors-Alarm"
+      Namespace: AWS/Connect
+      MetricName: ContactFlowErrors
+      Dimensions:
+        - Name: InstanceId
+          Value: !Ref InstanceId
+        - Name: MetricGroup
+          Value: VoiceCalls
+      Statistic: Sum
+      Period: 60
+      EvaluationPeriods: 1
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      AlarmActions:
+        - !Ref MySNSTopic
+
+  ContactFlowFatalErrors:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub "${InstanceId}-ContactFlowFatalErrors-Alarm"
+      Namespace: AWS/Connect
+      MetricName: ContactFlowFatalErrors
+      Dimensions:
+        - Name: InstanceId
+          Value: !Ref InstanceId
+        - Name: MetricGroup
+          Value: VoiceCalls
+      Statistic: Sum
+      Period: 60
+      EvaluationPeriods: 1
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      AlarmActions:
+        - !Ref MySNSTopic
+
+  ThrottledCalls:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub "${InstanceId}-ThrottledCalls-Alarm"
+      Namespace: AWS/Connect
+      MetricName: ThrottledCalls
+      Dimensions:
+        - Name: InstanceId
+          Value: !Ref InstanceId
+        - Name: MetricGroup
+          Value: VoiceCalls
+      Statistic: Sum
+      Period: 60
+      EvaluationPeriods: 1
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      AlarmActions:
+        - !Ref MySNSTopic
+
+  ToInstancePacketLossRate:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub "${InstanceId}-ToInstancePacketLossRate-Alarm"
+      Namespace: AWS/Connect
+      MetricName: ToInstancePacketLossRate
+      Dimensions:
+        - Name: InstanceId
+          Value: !Ref InstanceId
+        - Name: MetricGroup
+          Value: VoiceCalls
+      Statistic: Sum
+      Period: 60
+      EvaluationPeriods: 1
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      AlarmActions:
+        - !Ref MySNSTopic
