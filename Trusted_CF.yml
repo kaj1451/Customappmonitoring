@@ -6,23 +6,7 @@ Parameters:
     Default: Customer-1
     
  
-Resources:
-  # S3 Bucket Creation
-  S3Bucket:
-    Type: 'AWS::S3::Bucket'
-    Properties:
-      PublicAccessBlockConfiguration:
-        BlockPublicAcls: false
-        BlockPublicPolicy: false
-        IgnorePublicAcls: false
-        RestrictPublicBuckets: false
-      WebsiteConfiguration:
-        IndexDocument: index.html
-        ErrorDocument: error.html
-    DeletionPolicy: Retain
-    UpdateReplacePolicy: Retain
-
-  # Bucket Policy to allow public access
+# Bucket Policy to allow public access
   BucketPolicy:
     Type: 'AWS::S3::BucketPolicy'
     Properties:
