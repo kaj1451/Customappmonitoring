@@ -1,5 +1,5 @@
 async function initialFetchCloudWatchData() {
-    let baseURL = "https://tztqsv9x8f.execute-api.us-east-1.amazonaws.com/testing/yamlcloudwatchtest";
+    let baseURL = "https://x36h4lqlfi.execute-api.us-east-1.amazonaws.com/testing/yamlcloudwatchtest";
     try {
        let response = await fetch(baseURL);
         if (!response.ok) {
